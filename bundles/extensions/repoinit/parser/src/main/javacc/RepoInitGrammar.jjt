@@ -18,6 +18,8 @@ package org.apache.sling.repoinit.parser.impl;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
 
 import org.apache.sling.repoinit.parser.operations.*;
 
@@ -78,11 +80,12 @@ TOKEN:
 |   < RCURLY: "}" >
 |   < COMMA: "," >
 |   < STAR: "*" >
+|   < RESTRICTION: "restriction" >
 
 /* The order of these fuzzy statements is important (first match wins?) */ 
 |   < NAMESPACED_ITEM: (["a"-"z"] | ["A"-"Z"])+ ":" (["a"-"z"] | ["A"-"Z"])+ >
 |   < PATH_STRING: "/" (["a"-"z"] | ["A"-"Z"] | ["0"-"9"] | ["-"] | ["_"] | ["."] | ["/"]) * >
-|   < STRING: (["a"-"z"] | ["A"-"Z"] | ["0"-"9"] | ["-"] | ["_"] | ["."] | ["/"] | [":"]) * >
+|   < STRING: (["a"-"z"] | ["A"-"Z"] | ["0"-"9"] | ["-"] | ["_"] | ["."] | ["/"] | [":"] | ["*"]) * >
 |   < EOL: "\n" >
 }
 
@@ -255,29 +258,96 @@ void userPrivilegesLine(List<AclLine> lines) :
 {
     AclLine line;
     List<String> tmp;
+    Map<String,List<String>> restrictions;
 }
 {
     line = privilegesLineOperation()
-    tmp = namespacedItemsList() { line.setProperty(AclLine.PROP_PRIVILEGES, tmp); } 
+    tmp = namespacedItemsList() { line.setProperty(AclLine.PROP_PRIVILEGES, tmp); }
     <FOR>
     tmp = principalsList() { line.setProperty(AclLine.PROP_PRINCIPALS, tmp); }
+    restrictions = parseRestrictions()  { line.setRestrictions(restrictions); }
     <EOL>
 
     {   
         lines.add(line); 
     }
 }
+/**
+ * Parses a single restriction value
+ */
+void parseRestrictionValue(List<String> values) :
+{
+   Token t;
+}
+{
+   <COMMA> ( t=<STAR> | t=<NAMESPACED_ITEM> | t=<PATH_STRING> | t=<STRING> )
+   {
+       values.add(t.image);
+   }
+}
+
+/**
+ * parses list of restriction values
+ */
+List<String> parseRestrictionValues() :
+{
+    List<String> values = new ArrayList<String>();
+}
+{
+    ( parseRestrictionValue(values) ) *
+
+    {
+        return values;
+    }
+
+}
+
+
+/**
+ * parses a single restriction
+ */
+void parseRestriction(Map<String,List<String>> map) :
+{
+  Token restrictionProp;
+  List<String> values;
+}
+{
+  <RESTRICTION>
+  <LPAREN> restrictionProp=<NAMESPACED_ITEM> values=parseRestrictionValues()  <RPAREN>
+
+  {
+      map.put(restrictionProp.image,values);
+  }
+}
+
+/**
+ * parses list of restrictions
+ */
+Map<String,List<String>> parseRestrictions() :
+{
+    Map<String,List<String>> map = new HashMap<String,List<String>>();
+    String restrictionName;
+}
+{
+   ( parseRestriction(map) )*
+
+   {
+       return map;
+   }
+}
 
 void pathPrivilegesLine(List<AclLine> lines) : 
 {
     AclLine line;
     List<String> tmp;
+    Map<String,List<String>> restrictions;
 }
 {
     line = privilegesLineOperation()
     tmp = namespacedItemsList() { line.setProperty(AclLine.PROP_PRIVILEGES, tmp); } 
     <ON> tmp = pathsList() { line.setProperty(AclLine.PROP_PATHS, tmp); }
     ( <NODETYPES> tmp = namespacedItemsList() { line.setProperty(AclLine.PROP_NODETYPES, tmp); }) ?
+     restrictions = parseRestrictions()  { line.setRestrictions(restrictions); }
     <EOL>
     
     {    
